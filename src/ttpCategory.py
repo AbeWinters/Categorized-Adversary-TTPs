@@ -2,6 +2,9 @@ import requests
 import json
 import re
 
+# Change to False to limit the resulting file to only include the actors that have an entry in MITRE ATT&CK.
+FULL_ETDA = True
+
 # MITRE Groups https://attack.mitre.org/groups/
 mitre_actors = requests.get('https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json')
 mitre_actors = mitre_actors.json()
@@ -83,6 +86,21 @@ for mitre_actor in mitre_actor_list:
 etda_actors = requests.get('https://apt.etda.or.th/cgi-bin/getmisp.cgi?o=g')
 etda_actors = etda_actors.json()
 
+# Build dictionary from alternative ETDA JSON file to include operation dates
+etda_actor_cards = requests.get('https://apt.etda.or.th/cgi-bin/getcard.cgi?g=all&o=j')
+etda_actor_cards = etda_actor_cards.json()
+
+operations_dict = {}
+
+for actor in etda_actor_cards['values']:
+    date_list = []
+    year_list = []
+    if 'operations' in actor.keys():
+        for operation in actor['operations']:
+            date_list.append(operation['date'])
+            year_list.append(operation['date'][:4])
+    operations_dict[actor['uuid']] = (date_list,year_list)
+
 etda_actor_list = []
 for adversary in etda_actors['values']:
     etda_actor_dict = {}
@@ -121,6 +139,16 @@ for adversary in etda_actors['values']:
     if 'cfr-suspected-victims' in metadata.keys():
         etda_actor_dict['targeted_countries'] = metadata['cfr-suspected-victims']
 
+    op_date, op_year = [],[]
+
+    try:
+        op_date,op_year = operations_dict[adversary['uuid']]
+    except:
+        print("{} not present in ETDA group cards".format(adversary['uuid']))
+
+    etda_actor_dict['operation_date'] = op_date
+    etda_actor_dict['operation_year'] = op_year
+
     variations_custom = []
     for item in etda_actor_dict['variations']:
         variation_upper = item.upper()
@@ -143,8 +171,10 @@ for adversary in etda_actors['values']:
     etda_actor_list.append(etda_actor_dict)
 
 # Comparison
+etda_merged_ids = []
 merge_list = []
 id_check = []
+
 for mitre_actor in mitre_actor_list:
     for mitre_variation in mitre_actor['variations_custom']:
         for etda_actor in etda_actor_list:
@@ -155,6 +185,7 @@ for mitre_actor in mitre_actor_list:
                     continue
                 else:
                     id_check.append(mitre_actor['id'])
+                    etda_merged_ids.append(etda_actor['id'])
 
                     merge_dict['mitre_attack_id'] = mitre_actor['id']
                     merge_dict['mitre_attack_name'] = mitre_actor['name']
@@ -167,6 +198,9 @@ for mitre_actor in mitre_actor_list:
                     merge_dict['etda_aliases'] = etda_actor['variations']
                     merge_dict['etda_first_seen'] = etda_actor['created']
                     merge_dict['etda_url'] = etda_actor['url']
+                    merge_dict['etda_operation_dates'] = etda_actor['operation_date']
+                    merge_dict['etda_operation_year'] = etda_actor['operation_year']
+
                     if 'country' in etda_actor.keys():
                         merge_dict['country'] = etda_actor['country']
                     else:
@@ -187,5 +221,44 @@ for mitre_actor in mitre_actor_list:
 
                     merge_list.append(merge_dict)
 
-outfile = open('Categorized_Adversary_TTPs.json', 'w', encoding='utf-8')
-json.dump(merge_list, outfile, indent=2, ensure_ascii=False)
+if FULL_ETDA:
+    for etda_actor in etda_actor_list:
+        if etda_actor['id'] not in etda_merged_ids:
+            # Start compiling final data
+            merge_dict = {}
+        
+            merge_dict['mitre_attack_id'] = "Not Available"
+            merge_dict['mitre_attack_name'] = "Not Available"
+            merge_dict['mitre_attack_aliases'] = "Not Available"
+            merge_dict['mitre_attack_created'] = "Not Available"
+            merge_dict['mitre_attack_last_modified'] = "Not Available"
+            merge_dict['mitre_url'] = "Not Available"
+            merge_dict['etda_id'] = etda_actor['id']
+            merge_dict['etda_name'] = etda_actor['name']
+            merge_dict['etda_aliases'] = etda_actor['variations']
+            merge_dict['etda_first_seen'] = etda_actor['created']
+            merge_dict['etda_url'] = etda_actor['url']
+            merge_dict['etda_operation_dates'] = etda_actor['operation_date']
+            merge_dict['etda_operation_year'] = etda_actor['operation_year']
+            if 'country' in etda_actor.keys():
+                merge_dict['country'] = etda_actor['country']
+            else:
+                merge_dict['country'] = 'None Provided'
+            if 'motivation' in etda_actor.keys():
+                merge_dict['motivation'] = etda_actor['motivation']
+            else:
+                merge_dict['motivation'] = 'None Provided'
+            if 'targeted_industries' in etda_actor.keys():
+                merge_dict['victim_industries'] = etda_actor['targeted_industries']
+            else:
+                merge_dict['victim_industries'] = 'None Provided'
+            if 'targeted_countries' in etda_actor.keys():
+                merge_dict['victim_countries'] = etda_actor['targeted_countries']
+            else:
+                merge_dict['victim_countries'] = 'None Provided'
+            merge_dict['mitre_attack_ttps'] = "Not Available"
+
+            merge_list.append(merge_dict)
+
+with open('Categorized_Adversary_TTPs.json', 'w', encoding='utf-8') as outfile:
+    json.dump(merge_list, outfile, indent=2, ensure_ascii=False)

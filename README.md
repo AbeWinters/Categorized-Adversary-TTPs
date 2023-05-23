@@ -1,4 +1,8 @@
 # Categorized Adversary TTPs
+Forked from tropChaud. Changes I have made:
+- Include operations from ETDA
+- Include the option to include those ETDA entries that do not exist within MITRE ATT&CK. 
+    - This can be done by setting the flag `FULL_ETDA` to `True`
 
 ### MITRE ATT&CK x ThaiCERT = new pivot opportunities for TTP analysis & threat modeling
 
